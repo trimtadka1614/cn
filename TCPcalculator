@@ -1,0 +1,203 @@
+SCIENTIFIC SERVER-
+#include<sys/socket.h>
+#include<sys/types.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<string.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<unistd.h>
+
+struct sockaddr_in serv_addr, cli_addr;
+int listenfd, connfd, r, w, val, cli_addr_len;
+char choice;
+unsigned short serv_port = 25602;
+char serv_ip[] = "127.0.0.1";
+char buff[128];
+
+int main()
+{
+    bzero(&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(serv_port);
+    inet_aton(serv_ip, (&serv_addr.sin_addr));
+
+    printf("\nTCP BINARY CALCULATOR SERVER.\n");
+
+    if((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("socket error");
+        exit(1);
+    }
+
+    if((bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr))) < 0)
+    {
+        perror("bind error");
+        close(listenfd);
+        exit(1);
+    }
+
+    listen(listenfd, 5);
+
+    cli_addr_len = sizeof(cli_addr);
+    
+   do
+    {
+        printf("\nSERVER: Listening for clients...\n");
+        if((connfd = accept(listenfd, (struct sockaddr*)&cli_addr, &cli_addr_len)) < 0)
+        {
+            perror("accept error");
+            continue;
+        }
+        printf("\nSERVER: Connection from %s accepted.\n", inet_ntoa(cli_addr.sin_addr));
+	while(1)
+	{
+            int first_operation = 1;
+            r = read(connfd, buff, 128);
+            if(r <= 0)
+            {
+                printf("Client disconnected\n");
+                break;
+            } 
+            if(strcmp(buff, "exit") == 0)
+            {
+                printf("Client exited\n");
+                break;
+            }
+            char command[256];
+            char response[128];
+            FILE *fp;
+            snprintf(command, sizeof(command), "echo '%s' | bc", buff);
+            fp = popen(command, "r");
+            if (fp == NULL) {
+                strcpy(response, "Calculation error");
+            } else {
+                if (fgets(response, sizeof(response)-1, fp) == NULL) {
+                    strcpy(response, "Invalid input");
+                }
+                response[strcspn(response, "\n")] = '\0'; 
+                pclose(fp);
+            }
+            write(connfd, response, strlen(response)+1);
+            printf("Sent result: %s\n", response);
+            if (first_operation) {
+                first_operation = 0;
+                printf("Kick client? (y/n): ");
+                scanf(" %c", &choice);
+                //printf("%d",choice);
+                //getchar(); 
+                //if(!first_operation && choice == 'y' || choice == 'Y')
+                if(choice == 'y' || choice == 'Y')
+                {
+                   write(connfd,"Break",6);
+                   break;
+                }
+                else //if(!first_operation && choice == 'n' || choice == 'N')
+               	{
+               		write(connfd,"continue",9);
+               		first_operation = 1;
+               	}
+            }
+    	}
+        }while(1);
+        close(connfd);
+        close(listenfd);
+    	return 0;
+}
+
+
+SCIENTIFIC CLIENT-
+#include<sys/types.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
+#include<arpa/inet.h>
+#include<string.h>
+#include<stdlib.h>
+#include<stdio.h>
+#include<unistd.h>
+
+struct sockaddr_in serv_addr;
+int skfd, r, w;
+
+unsigned short serv_port = 25602;
+char serv_ip[] = "127.0.0.1";
+char rbuff[128], sbuff[128];
+
+int main()
+{
+    bzero(&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(serv_port);
+    inet_aton(serv_ip, (&serv_addr.sin_addr));
+
+    printf("\nTCP BINARY CALCULATOR CLIENT.\n");
+
+    if((skfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("socket error");
+        exit(1);
+    }
+
+    if(connect(skfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
+    {
+        perror("connect error");
+        close(skfd);
+        exit(1);
+    }
+
+    printf("Connected to server.\n");
+
+do
+    {
+        printf("\n1. Calculate\n2. Exit\nEnter choice: ");
+        int choice;
+        scanf("%d", &choice);
+        while(getchar() != '\n'); 
+
+        if(choice == 1)
+        {
+            printf("Enter equation (e.g., 5+3): ");
+            fgets(sbuff, 128, stdin);
+            sbuff[strcspn(sbuff, "\n")] = '\0';
+
+            if(write(skfd, sbuff, strlen(sbuff)+1) < 0)
+            {
+                printf("Server disconnected\n");
+                break;
+            }
+
+            r = read(skfd, rbuff, 128);
+            if(r <= 0)
+            {
+            	
+                printf("Server kicked you out or disconnected\n");
+                close(skfd);
+                break;
+            }
+            printf("Result: %s\n", rbuff);
+        }
+        else if(choice == 2)
+        {
+            write(skfd, "exit", 5);
+            printf("Disconnecting from server...\n");
+            break;
+        }
+        else
+        {
+            printf("Invalid choice\n");
+        }
+        r = read(skfd, rbuff, 128);
+        if(strcmp(rbuff,"continue")!=0)
+        {
+        	printf("Client kicked out...\n");
+        	break;
+        }
+       }while(1);
+        	
+        
+    
+
+    close(skfd);
+    printf("Exiting...\n");
+    return 0;
+}
