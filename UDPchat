@@ -1,0 +1,185 @@
+//Chat Server UDP
+
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/select.h>
+
+#define BUFFER_SIZE 256
+
+int main() {
+    struct sockaddr_in serv_addr, cli_addr;
+    int sockfd;
+    socklen_t cli_addr_len;
+    char buff[BUFFER_SIZE];
+
+    unsigned short serv_port = 25022;
+    char serv_ip[] = "127.0.0.1";
+
+    bzero(&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(serv_port);
+    inet_aton(serv_ip, &serv_addr.sin_addr);
+
+    printf("\nCHAT SERVER STARTED.\n");
+
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("SERVER ERROR: Cannot create socket");
+        exit(1);
+    }
+
+    if (bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("SERVER ERROR: Cannot bind");
+        close(sockfd);
+        exit(1);
+    }
+
+    cli_addr_len = sizeof(cli_addr);
+
+    while (1) {   
+        printf("\nSERVER: Waiting for connection...\n");
+        bzero(buff, BUFFER_SIZE);
+
+        recvfrom(sockfd, buff, BUFFER_SIZE, 0, (struct sockaddr*)&cli_addr, &cli_addr_len);
+        printf("\nSERVER: Connected to client at %s\n", inet_ntoa(cli_addr.sin_addr));
+
+        sendto(sockfd, "connected", strlen("connected") + 1, 0, (struct sockaddr*)&cli_addr, cli_addr_len);
+
+        fd_set read_fds;
+        while (1) {  
+            FD_ZERO(&read_fds);
+            FD_SET(STDIN_FILENO, &read_fds);
+            FD_SET(sockfd, &read_fds);
+
+            printf("\nSERVER: Type a message (or 'exit' to disconnect client): ");
+            fflush(stdout);
+
+            select(sockfd + 1, &read_fds, NULL, NULL, NULL);
+
+            if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+                bzero(buff, BUFFER_SIZE);
+                fgets(buff, BUFFER_SIZE, stdin);
+                buff[strcspn(buff, "\n")] = 0;
+                printf("SERVER: %s\n", buff);
+
+                sendto(sockfd, buff, strlen(buff) + 1, 0, (struct sockaddr*)&cli_addr, cli_addr_len);
+
+                if (strcmp(buff, "exit") == 0) {
+                    printf("\nSERVER: Disconnected client manually.\n");
+                    break; 
+                }
+            }
+
+            if (FD_ISSET(sockfd, &read_fds)) {
+                bzero(buff, BUFFER_SIZE);
+                recvfrom(sockfd, buff, BUFFER_SIZE, 0, (struct sockaddr*)&cli_addr, &cli_addr_len);
+
+                printf("\nCLIENT [%s]: %s\n", inet_ntoa(cli_addr.sin_addr), buff);
+
+                if (strcmp(buff, "exit") == 0) {
+                    printf("\nSERVER: Client requested disconnection.\n");
+                    break;  
+                }
+            }
+        }
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+
+
+
+
+//Chat Client UDP
+
+
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/select.h>
+
+#define BUFFER_SIZE 256
+
+int main() {
+    struct sockaddr_in serv_addr;
+    int sockfd;
+    socklen_t serv_addr_len;
+    char buff[BUFFER_SIZE];
+
+    unsigned short serv_port = 25022;
+    char serv_ip[] = "127.0.0.1";
+
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("CLIENT ERROR: Cannot create socket");
+        exit(1);
+    }
+
+    bzero(&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(serv_port);
+    inet_aton(serv_ip, &serv_addr.sin_addr);
+    serv_addr_len = sizeof(serv_addr);
+
+    printf("\nCLIENT: Connecting to server at %s:%d\n", serv_ip, serv_port);
+
+    sendto(sockfd, "hello", strlen("hello") + 1, 0, (struct sockaddr*)&serv_addr, serv_addr_len);
+
+    bzero(buff, BUFFER_SIZE);
+    recvfrom(sockfd, buff, BUFFER_SIZE, 0, (struct sockaddr*)&serv_addr, &serv_addr_len);
+    if (strcmp(buff, "connected") == 0) {
+        printf("\nCLIENT: Connected to server!\n");
+    }
+
+    fd_set read_fds;
+    while (1) {
+        FD_ZERO(&read_fds);
+        FD_SET(STDIN_FILENO, &read_fds);
+        FD_SET(sockfd, &read_fds);
+
+        printf("\nCLIENT: Type a message (or 'exit' to disconnect): ");
+        fflush(stdout);
+
+        select(sockfd + 1, &read_fds, NULL, NULL, NULL);
+
+        if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+            bzero(buff, BUFFER_SIZE);
+            fgets(buff, BUFFER_SIZE, stdin);
+            buff[strcspn(buff, "\n")] = 0;
+            printf("CLIENT: %s\n", buff);
+
+            sendto(sockfd, buff, strlen(buff) + 1, 0, (struct sockaddr*)&serv_addr, serv_addr_len);
+
+            if (strcmp(buff, "exit") == 0) {
+                printf("\nCLIENT: Disconnected from server.\n");
+                break;
+            }
+        }
+
+        if (FD_ISSET(sockfd, &read_fds)) {
+            bzero(buff, BUFFER_SIZE);
+            recvfrom(sockfd, buff, BUFFER_SIZE, 0, (struct sockaddr*)&serv_addr, &serv_addr_len);
+
+            printf("\nSERVER: %s\n", buff);
+
+            if (strcmp(buff, "exit") == 0) {
+                printf("\nCLIENT: Server requested disconnection.\n");
+                break;
+            }
+        }
+    }
+
+    close(sockfd);
+    return 0;
+}
