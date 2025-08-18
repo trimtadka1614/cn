@@ -1,0 +1,112 @@
+// UDP Echo Server
+
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+struct sockaddr_in serv_addr, cli_addr;
+int sockfd, r, w, cli_addr_len;
+unsigned short serv_port = 25020; 
+char serv_ip[] = "127.0.0.1"; 
+char buff[128]; 
+
+int main(){
+    bzero(&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET; 
+    serv_addr.sin_port = htons(serv_port); 
+    serv_addr.sin_addr.s_addr = inet_addr(serv_ip); 
+
+    printf("\nUDP ECHO SERVER.\n");
+
+    if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
+        printf("\nSERVER ERROR: Cannot create socket.\n");
+        exit(1);
+    }
+
+    if((bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr))) < 0){
+        printf("\nSERVER ERROR: Cannot bind.\n");
+        close(sockfd);
+        exit(1);
+    }
+
+    cli_addr_len = sizeof(cli_addr);
+
+    for( ; ; ){
+        printf("\nSERVER: Waiting for clients... Press Ctrl+C to stop.\n");
+        
+        if((r = recvfrom(sockfd, buff, 128, 0, 
+                         (struct sockaddr*)&cli_addr, (socklen_t*)&cli_addr_len)) < 0){
+            printf("\nSERVER ERROR: Cannot receive message.\n");
+        } else {
+            buff[r] = '\0';
+            printf("\nSERVER: Received '%s' from %s\n", buff, inet_ntoa(cli_addr.sin_addr));
+
+            if((w = sendto(sockfd, buff, r, 0, 
+                           (struct sockaddr*)&cli_addr, cli_addr_len)) < 0){
+                printf("\nSERVER ERROR: Cannot send message back to client.\n");
+            } else {
+                printf("\nSERVER: Echoed back '%s' to %s\n", buff, inet_ntoa(cli_addr.sin_addr));
+            }
+        }
+    }
+}
+
+
+// UDP Echo Client
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+
+struct sockaddr_in serv_addr;           
+int skfd, r, w;
+unsigned short serv_port = 25020;
+char serv_ip[] = "127.0.0.1";      
+char rbuff[128]; 
+char sbuff[128] = "===good marning==="; 
+
+int main(){
+    bzero(&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET; 
+    serv_addr.sin_port = htons(serv_port); 
+    serv_addr.sin_addr.s_addr = inet_addr(serv_ip);
+
+    printf("\nUDP ECHO CLIENT.\n");
+
+    if((skfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
+        printf("\nCLIENT ERROR: Cannot create socket.\n");
+        exit(1);
+    }
+
+    socklen_t serv_len = sizeof(serv_addr);
+
+    if((w = sendto(skfd, sbuff, strlen(sbuff), 0, 
+                   (struct sockaddr*)&serv_addr, serv_len)) < 0){
+        printf("\nCLIENT ERROR: Cannot send message to server.\n");
+        close(skfd);
+        exit(1);
+    }
+    printf("\nCLIENT: Message sent to server.\n");
+
+    if((r = recvfrom(skfd, rbuff, 128, 0, 
+                     (struct sockaddr*)&serv_addr, &serv_len)) < 0){
+        printf("\nCLIENT ERROR: Cannot receive message from server.\n");
+    } else {
+        rbuff[r] = '\0';
+        printf("\nCLIENT: Message from server: %s\n", rbuff);
+    }
+
+    close(skfd);
+    exit(0);
+}
+
